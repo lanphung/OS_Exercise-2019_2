@@ -26,7 +26,6 @@ struct job
 
 pid_t fgProcess = 0;
 int toBg = 0;
-int pipe_ints[2];
 
 void sigint_handler(int s)
 {
@@ -134,7 +133,7 @@ void exitCmd(vector<string> tokens)
     else
     {
         cout << "Some background processes exist. You need to kill the background processes to terminate." << endl;
-        cout << "Are you sure ? (Y/N) ? ";
+        cout << "Are you sure ? (Yes/No) ? ";
         string acceptCommand;
         getline(cin, acceptCommand);
         if (acceptCommand == "Y" || acceptCommand == "y")
@@ -201,7 +200,6 @@ void pathCmd(vector<string> tokens)
     string commandGetPath = "printenv ";
     commandGetPath.append(tokens[1]);
     const char *temp = commandGetPath.c_str();
-    // system(temp);
 
     char *result = getenv(tokens[1].c_str());
     if (result != NULL)
@@ -210,7 +208,7 @@ void pathCmd(vector<string> tokens)
     }
     else
     {
-        cout << "Dont  have this path in environment variables" << endl;
+        cout << "Dont have this path in environment variables" << endl;
     }
 }
 
@@ -360,60 +358,21 @@ void killCmd(vector<string> tokens)
     }
 }
 
-void launch(vector<string> tokens, int pipeFlag)
+void launch(vector<string> tokens)
 {
-
     pid_t pid, w_pid;
-    FILE *inFile;
-    FILE *outFile;
     string command = "";
-    int gFlag = 0, lFlag = 0; // we dont need this
+
     for (int i = 0; i < tokens.size(); i++)
     {
-        if (tokens[i] == "<")
-            lFlag = i;
-        else if (tokens[i] == ">" || tokens[i] == ">>")
-            gFlag = i;
         command.append(tokens[i]);
         command.append(" ");
-        //else if (regex_match(tokens[i], regex("!(\\+|-)?[[:digit:]]+"))) {
     }
-    if (pipeFlag == -1 || pipeFlag == 0)
-        history.push_back(command);
-    if (pipeFlag == 1)
-        history[history.size() - 1].append("| " + command);
-    if (lFlag)
-    {
-        inFile = fopen(tokens[lFlag + 1].c_str(), "r");
-        if (!inFile)
-        {
-            cout << "Invalid Input File." << endl;
-            return;
-        }
-        //dup2(fileno(inFile), 0);
-    }
-    if (gFlag)
-    {
-        if (tokens[gFlag] == ">")
-            outFile = fopen(tokens[gFlag + 1].c_str(), "w");
-        else if (tokens[gFlag] == ">>")
-            outFile = fopen(tokens[gFlag + 1].c_str(), "a");
-        //dup2(fileno(outFile), 1);
-    }
-    if (lFlag || gFlag)
-    {
-        if (lFlag)
-        {
-            while (tokens.size() > lFlag)
-                tokens.pop_back();
-        }
-        else
-        {
-            while (tokens.size() > gFlag)
-                tokens.pop_back();
-        }
-    }
-    int flag = 0;
+
+    history.push_back(command);
+
+    int flag = 0; // signal "&" indicates which mode selected : mode bg (flag = 1) or  fb (flag = 0)
+
     string last_param = tokens[tokens.size() - 1];
     int last_param_len = last_param.length() - 1;
     if (last_param[last_param_len] == '&')
@@ -430,22 +389,6 @@ void launch(vector<string> tokens, int pipeFlag)
     pid = fork();
     if (pid == 0)
     {
-        if (lFlag)
-            dup2(fileno(inFile), 0);
-        if (gFlag)
-            dup2(fileno(outFile), 1);
-        if (pipeFlag == 0)
-        {
-            close(1);
-            close(pipe_ints[0]);
-            dup2(pipe_ints[1], 1);
-        }
-        else if (pipeFlag == 1)
-        {
-            close(0);
-            close(pipe_ints[1]);
-            dup2(pipe_ints[0], 0);
-        }
         execvp(argv[0], (char **)argv);
         cout << "Invalid Command." << endl;
         exit(EXIT_FAILURE);
@@ -492,14 +435,11 @@ void launch(vector<string> tokens, int pipeFlag)
         //fgProcess = pid;
         //} while (!WIFEXITED(status) && !WIFSIGNALED(status));
     }
-    if (lFlag)
-        fclose(inFile);
-    if (gFlag)
-        fclose(outFile);
+
     return;
 }
 
-void execute(vector<string> tokens, int pipeFlag)
+void execute(vector<string> tokens)
 {
     if (tokens[0] == "cd")
     {
@@ -551,7 +491,7 @@ void execute(vector<string> tokens, int pipeFlag)
         newTokens.push_back("ps");
         newTokens.push_back("-a");
 
-        launch(newTokens, pipeFlag);
+        launch(newTokens);
     }
     else if (tokens[0] == "stop") //Ctrl+Z
     {
@@ -563,7 +503,7 @@ void execute(vector<string> tokens, int pipeFlag)
         bgCmd(tokens);
     }
     else
-        launch(tokens, pipeFlag); // lauch external command
+        launch(tokens); // lauch external command
     return;
 }
 
@@ -572,38 +512,25 @@ void shellLoop()
     signal(SIGINT, sigint_handler);
     string path = get_current_dir_name();
     vector<string> tokens;
-    // path.append(" > ");
     string command;
     int status;
+
     while (true)
     {
         cout << "\nDir: " << path << endl
              << ">>> ";
         getline(cin, command);
         pid_t pid = waitpid(pid, &status, WNOHANG);
-        pipe(pipe_ints);
-        tokens = split(command, '|');
-        if (tokens.size() > 1)
-        {
-            vector<string> tokensCmd1 = split(tokens[0], ' ');
-            execute(tokensCmd1, 0);
-            vector<string> tokensCmd2 = split(tokens[1], ' ');
-            execute(tokensCmd2, 1);
-            //history.push_back(command);
-            tokensCmd1.clear();
-            tokensCmd2.clear();
-        }
-        else
-        {
-            tokens = split(tokens[0], ' ');
 
-            for (int i = 0; i < tokens.size(); i++)
-            {
-                cout << "tokens[" << i << "] : " << tokens[i] << endl;
-            }
+        tokens = split(command, ' ');
 
-            execute(tokens, -1);
+        for (int i = 0; i < tokens.size(); i++)
+        {
+            cout << "tokens[" << i << "] : " << tokens[i] << endl;
         }
+
+        execute(tokens);
+
         if (pid > 0)
         {
             //cout << "Process with PID " << pid << " has been terminated." << endl;
@@ -624,7 +551,6 @@ void shellLoop()
         path.clear();
         tokens.clear();
         path = get_current_dir_name();
-        // path.append(">");
     }
     return;
 }
