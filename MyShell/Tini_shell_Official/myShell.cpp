@@ -12,7 +12,7 @@
 #include <ctime>
 //#include <regex>
 
-// test :  thiếu lệnh ps, start chương trình =  mode bg và fg, stop command
+// test :  thiếu lệnh ps,  command stopping background process
 // idea : coppy all running process in system to jobs in this shell to manage it
 
 using namespace std;
@@ -24,8 +24,8 @@ struct job
     string cmd;
 };
 
-pid_t fgProcess = 0;
-int toBg = 0;
+pid_t fgProcess = 0; // current fg process's PID running in shell
+int toBg = 0;        // if toBg = 0 : have another bg process running in shell, we can't start new bg process
 
 void sigint_handler(int s)
 {
@@ -316,6 +316,23 @@ void fgCmd(vector<string> tokens)
     }
 }
 
+void stopCmd(vector<string> tokens)
+{
+    history.push_back("stop " + tokens[1]);
+    if (tokens[1][0] == '%')
+    {
+        int number = atoi(tokens[1].substr(1).c_str());
+        if (number > jobs.size())
+        {
+            cout << "Invalid Job number." << endl;
+            return;
+        }
+        kill(jobs[number - 1].pid, SIGSTOP);
+        jobs[number - 1].running = 0;
+        cout << "Job number " << number << " has been stopped." << endl;
+    }
+}
+
 void killCmd(vector<string> tokens)
 {
     history.push_back("kill " + tokens[1]);
@@ -371,7 +388,7 @@ void launch(vector<string> tokens)
 
     history.push_back(command);
 
-    int flag = 0; // signal "&" indicates which mode selected : mode bg (flag = 1) or  fb (flag = 0)
+    int flag = 0; // signal "&" indicates which mode selected : foreground (flag = 0) OR mode background (flag = 1)
 
     string last_param = tokens[tokens.size() - 1];
     int last_param_len = last_param.length() - 1;
@@ -381,7 +398,7 @@ void launch(vector<string> tokens)
         flag = 1;
     }
 
-    cout << "\nThis mode is :\n"
+    cout << "\nThis mode is : "
          << (flag == 0 ? "foreground" : "background");
 
     // Important: Vector conversion to array of strings
@@ -390,6 +407,7 @@ void launch(vector<string> tokens)
         argv[j] = tokens[j].c_str();
     argv[tokens.size()] = NULL;
     int status;
+
     pid = fork();
     if (pid == 0)
     {
@@ -405,7 +423,7 @@ void launch(vector<string> tokens)
     {
         //do {
         fgProcess = pid;
-        if (!flag)
+        if (!flag) // foreground
             do
             {
                 w_pid = waitpid(pid, &status, WNOHANG);
@@ -424,7 +442,7 @@ void launch(vector<string> tokens)
                     break;
                 }
             } while (w_pid == 0);
-        else
+        else // background
         {
             w_pid = waitpid(pid, &status, WNOHANG);
             if (w_pid == 0)
@@ -499,7 +517,7 @@ void execute(vector<string> tokens)
     }
     else if (tokens[0] == "stop") //Ctrl+Z
     {
-        fgCmd(tokens);
+        stopCmd(tokens);
     }
     else if (tokens[0] == "resume") //use command "bg" with this job stopped
     {
